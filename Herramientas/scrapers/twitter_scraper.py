@@ -21,23 +21,26 @@ class TwitterScraper:
             raise ValueError("❌ No se encontró el APIFY_TOKEN. Verifica tu archivo .env")
         
         self.client = ApifyClient(self.token)
-        self.actor_id = "gentle_cloud/twitter-tweets-scraper"
+        # Cambiamos al actor que el usuario prefiere (Lite Scraper que usa URLs)
+        self.actor_id = "apidojo/twitter-scraper-lite" 
         self.output_dir = Path(HERRAMIENTAS_DIR) / output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.colombia_tz = ZoneInfo("America/Bogota")
 
-    def process_account(self, account: str, start_date: str, end_date: str, max_tweets: int = 200) -> pd.DataFrame:
-        """Procesa una cuenta específica usando el Actor de Apify."""
-        # Nota: El formato usual de búsqueda es from:usuario since:fecha until:fecha
-        query = f"from:{account} since:{start_date} until:{end_date}"
-        print(f"\n🚀 Iniciando Apify Twitter Scraper para @{account}...")
-        print(f"🔎 Query: {query}")
+    def process_account(self, account: str, start_date: str, end_date: str, max_tweets: int = 100) -> pd.DataFrame:
+        """Procesa una cuenta específica usando el Lite Scraper de Apify."""
+        
+        # El usuario prefiere URLs completas para este actor
+        url = f"https://x.com/{account}"
+        print(f"\n🚀 Iniciando Apify Lite Scraper para @{account}...")
+        print(f"📅 Rango deseado: {start_date} al {end_date}")
 
         run_input = {
-            "searchQueries": [query],
-            "maxTweets": max_tweets,
-            "getRetweets": True,
-            "includeUserContext": True
+            "result_count": max_tweets,
+            "since_date": start_date, # El actor solo acepta fecha inicial
+            "start_urls": [
+                { "url": url }
+            ]
         }
 
         try:
@@ -55,6 +58,26 @@ class TwitterScraper:
 
             df = pd.DataFrame(items)
 
+            # --- FILTRADO POR FECHAS (POST-PROCESO) ---
+            # Identificar columna de fecha
+            date_col = "createdAt" if "createdAt" in df.columns else "created_at"
+            if date_col in df.columns:
+                df[date_col] = pd.to_datetime(df[date_col], errors="coerce", utc=True)
+                
+                # Convertir límites a datetime para comparar
+                limit_start = pd.to_datetime(start_date).tz_localize("UTC")
+                limit_end = pd.to_datetime(end_date).tz_localize("UTC").replace(hour=23, minute=59, second=59)
+                
+                # Filtrar
+                mask = (df[date_col] >= limit_start) & (df[date_col] <= limit_end)
+                df_filtered = df.loc[mask].copy()
+                
+                print(f"✂️ Filtrado: de {len(df)} tuits descargados, {len(df_filtered)} están en el rango {start_date} - {end_date}")
+                df = df_filtered
+
+            if df.empty:
+                return pd.DataFrame()
+
             # Serializar estructuras complejas
             for col in df.columns:
                 df[col] = df[col].apply(
@@ -66,14 +89,10 @@ class TwitterScraper:
             df["timestamp_descarga"] = now.strftime("%Y-%m-%d %H:%M:%S")
             df["account_queried"] = account
 
-            # Formatear fechas si existen (los nombres de columnas pueden variar en Apify)
-            date_cols = ["createdAt", "created_at", "date"]
-            for col in date_cols:
-                if col in df.columns:
-                    df[col] = pd.to_datetime(df[col], errors="coerce", utc=True)
-                    df[f"{col}_col"] = df[col].dt.tz_convert("America/Bogota").dt.tz_localize(None)
+            # Formatear fechas para el usuario (Bogotá)
+            if date_col in df.columns:
+                df[f"{date_col}_col"] = df[date_col].dt.tz_convert("America/Bogota").dt.tz_localize(None)
             
-            print(f"📊 {len(df)} tuits obtenidos para @{account}")
             return df
 
         except Exception as e:
