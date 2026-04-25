@@ -1,13 +1,14 @@
-# Excel temporary files
-~$*.xlsx
+# Entorno y Tokens
+.env
+**/__pycache__/
+*.pyc
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
+# Resultados y Datos (Pesados)
+Herramientas/resultados/
+Herramientas/descargas_tweets/
+Herramientas/descargas_tiktok/
+**/temp/
 
-# Jupyter
-.ipynb_checkpoints
-
-.venv/
-.venv/*
+# Archivos de sistema
+.DS_Store
+Thumbs.db
