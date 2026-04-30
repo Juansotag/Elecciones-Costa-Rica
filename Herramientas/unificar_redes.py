@@ -16,25 +16,34 @@ def unificar_datos():
     if os.path.exists(fb_file):
         print(f"Procesando Facebook: {fb_file}")
         df_fb = pd.read_csv(fb_file, sep=';', encoding='utf-8')
-        df_fb['red_social'] = 'Facebook'
         
-        # Renombrar para unificar, pero manteniendo el resto
-        rename_map = {
-            'pageName': 'usuario',
-            'text': 'texto',
-            'url': 'url',
-            'likes': 'likes',
-            'comments': 'comentarios',
-            'shares': 'compartidos',
-            'viewsCount': 'vistas'
-        }
-        if 'time_col' in df_fb.columns:
-            rename_map['time_col'] = 'fecha'
-        elif 'time' in df_fb.columns:
-            rename_map['time'] = 'fecha'
-            
-        df_fb = df_fb.rename(columns=rename_map)
-        dfs.append(df_fb)
+        # Procesar fecha
+        raw_date = df_fb['time_col'] if 'time_col' in df_fb.columns else df_fb['time']
+        dt_fb = pd.to_datetime(raw_date, errors='coerce')
+        
+        # Mapping
+        df_fb_mapped = pd.DataFrame({
+            'id_candidato': df_fb['id_candidato'],
+            'red_social': 'Facebook',
+            'fecha': dt_fb.dt.strftime('%Y-%m-%d'),
+            'hora': dt_fb.dt.strftime('%H:%M:%S'),
+            'usuario': df_fb['pageName'],
+            'texto': df_fb['text'],
+            'url': df_fb['url'],
+            'likes': df_fb['likes'],
+            'comentarios': df_fb['comments'],
+            'compartidos': df_fb['shares'],
+            'vistas': df_fb['viewsCount'] if 'viewsCount' in df_fb.columns else 0,
+            # Reacciones específicas
+            'fb_love': df_fb['reactionLoveCount'] if 'reactionLoveCount' in df_fb.columns else 0,
+            'fb_haha': df_fb['reactionHahaCount'] if 'reactionHahaCount' in df_fb.columns else 0,
+            'fb_care': df_fb['reactionCareCount'] if 'reactionCareCount' in df_fb.columns else 0,
+            'fb_wow': df_fb['reactionWowCount'] if 'reactionWowCount' in df_fb.columns else 0,
+            'fb_sad': df_fb['reactionSadCount'] if 'reactionSadCount' in df_fb.columns else 0,
+            'fb_angry': df_fb['reactionAngryCount'] if 'reactionAngryCount' in df_fb.columns else 0,
+            'favoritos': 0
+        })
+        dfs.append(df_fb_mapped)
     else:
         print(f"Advertencia: No se encontró {fb_file}")
 
@@ -42,21 +51,26 @@ def unificar_datos():
     if os.path.exists(tk_file):
         print(f"Procesando TikTok: {tk_file}")
         df_tk = pd.read_csv(tk_file, sep=';', encoding='utf-8')
-        df_tk['red_social'] = 'TikTok'
         
-        # Renombrar para unificar
-        rename_map = {
-            'uploadedAt': 'fecha',
-            'channel': 'usuario',
-            'title': 'texto',
-            'postPage': 'url',
-            'likes': 'likes',
-            'comments': 'comentarios',
-            'shares': 'compartidos',
-            'views': 'vistas'
-        }
-        df_tk = df_tk.rename(columns=rename_map)
-        dfs.append(df_tk)
+        # Procesar fecha (TikTok usa Unix timestamp en uploadedAt)
+        dt_tk = pd.to_datetime(df_tk['uploadedAt'], unit='s', errors='coerce')
+        
+        # Mapping
+        df_tk_mapped = pd.DataFrame({
+            'id_candidato': df_tk['id_candidato'],
+            'red_social': 'TikTok',
+            'fecha': dt_tk.dt.strftime('%Y-%m-%d'),
+            'hora': dt_tk.dt.strftime('%H:%M:%S'),
+            'usuario': df_tk['channel'],
+            'texto': df_tk['title'],
+            'url': df_tk['postPage'],
+            'likes': df_tk['likes'],
+            'comentarios': df_tk['comments'],
+            'compartidos': df_tk['shares'],
+            'vistas': df_tk['views'],
+            'favoritos': df_tk['bookmarks'] if 'bookmarks' in df_tk.columns else 0
+        })
+        dfs.append(df_tk_mapped)
     else:
         print(f"Advertencia: No se encontró {tk_file}")
 
@@ -64,40 +78,42 @@ def unificar_datos():
     if os.path.exists(tw_file):
         print(f"Procesando Twitter: {tw_file}")
         df_tw = pd.read_csv(tw_file, sep=';', encoding='utf-8')
-        df_tw['red_social'] = 'Twitter'
         
-        # Renombrar para unificar
-        rename_map = {
-            'date': 'fecha',
-            'account': 'usuario',
-            'text': 'texto',
-            'url': 'url',
-            'like_count': 'likes',
-            'reply_count': 'comentarios',
-            'retweet_count': 'compartidos',
-            'view_count': 'vistas'
-        }
-        df_tw = df_tw.rename(columns=rename_map)
-        dfs.append(df_tw)
+        # Procesar fecha (Twitter usa ISO 8601)
+        dt_tw = pd.to_datetime(df_tw['date'], errors='coerce')
+        
+        # Mapping
+        df_tw_mapped = pd.DataFrame({
+            'id_candidato': df_tw['id_candidato'],
+            'red_social': 'Twitter',
+            'fecha': dt_tw.dt.strftime('%Y-%m-%d'),
+            'hora': dt_tw.dt.strftime('%H:%M:%S'),
+            'usuario': df_tw['account'],
+            'texto': df_tw['text'],
+            'url': df_tw['url'],
+            'likes': df_tw['like_count'],
+            'comentarios': df_tw['reply_count'],
+            'compartidos': df_tw['retweet_count'],
+            'vistas': df_tw['view_count'],
+            'favoritos': 0
+        })
+        dfs.append(df_tw_mapped)
     else:
         print(f"Advertencia: No se encontró {tw_file}")
 
     if dfs:
-        # Concatenar todos. Los campos no comunes se llenarán con NaN
-        print("\nConcatenando y unificando columnas...")
-        df_final = pd.concat(dfs, ignore_index=True, sort=False)
+        # Concatenar todos
+        df_final = pd.concat(dfs, ignore_index=True)
         
-        # Mover columnas importantes al principio para mejor visibilidad
-        cols = ['id_candidato', 'red_social', 'fecha', 'usuario', 'texto', 'url', 'likes', 'comentarios', 'compartidos', 'vistas']
-        # Agregar el resto de columnas que no están en la lista anterior
-        other_cols = [c for c in df_final.columns if c not in cols]
-        df_final = df_final[cols + other_cols]
+        # Llenar NaNs con 0 y convertir a entero (int64)
+        interact_cols = ['likes', 'comentarios', 'compartidos', 'vistas', 'favoritos', 
+                        'fb_love', 'fb_haha', 'fb_care', 'fb_wow', 'fb_sad', 'fb_angry']
+        df_final[interact_cols] = df_final[interact_cols].fillna(0).astype('int64')
         
-        output_file = os.path.join(resultados_path, 'redes_unificadas_full.csv')
+        output_file = os.path.join(resultados_path, 'redes_unificadas.csv')
         df_final.to_csv(output_file, index=False, sep=';', encoding='utf-8-sig')
-        print(f"\nExito! Archivo unificado completo guardado en: {output_file}")
+        print(f"\n¡Éxito! Archivo unificado actualizado en: {output_file}")
         print(f"Total de publicaciones: {len(df_final)}")
-        print(f"Total de columnas: {len(df_final.columns)}")
         print("\nResumen por red social:")
         print(df_final['red_social'].value_counts())
     else:
@@ -105,3 +121,6 @@ def unificar_datos():
 
 if __name__ == "__main__":
     unificar_datos()
+
+
+
